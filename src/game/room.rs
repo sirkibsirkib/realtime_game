@@ -8,6 +8,7 @@ use noise::{
     Perlin,
 };
 use super::*;
+use std::iter::Iterator;
 
 
 pub struct Seed {
@@ -33,11 +34,11 @@ pub struct RoomConDep {
 }
 impl RoomConDep {
     fn derive(con_ind: &RoomConInd) -> Self {
-        let mut default_rocks = BitGrid::new(Room::ROOM_WIDTH as usize, Room::ROOM_HEIGHT as usize);
+        let mut default_rocks = BitGrid::new(Room::WIDTH as usize, Room::HEIGHT as usize);
         let mut n = Perlin::new();
-        for y in 0..Room::ROOM_HEIGHT {
+        for y in 0..Room::HEIGHT {
             let nx = (y as f64) * con_ind.seed.step_size + con_ind.seed.x_trans;
-            for x in 0..Room::ROOM_WIDTH {
+            for x in 0..Room::WIDTH {
                 let ny = (y as f64) * con_ind.seed.step_size + con_ind.seed.y_trans;
                 if n.get([nx, ny]) > 0.2 {
                     let coord = Coord2D::new(x, y);
@@ -81,8 +82,8 @@ pub struct Room {
 }
 
 impl Room {
-    pub const ROOM_WIDTH: u16 = 40;
-    pub const ROOM_HEIGHT: u16 = 30;
+    pub const WIDTH: u16 = 40;
+    pub const HEIGHT: u16 = 30;
 
     pub fn new(con_ind: RoomConInd, mut_ind: RoomMutInd) -> Self {
         let con_dep = RoomConDep::derive(&con_ind);
@@ -94,15 +95,68 @@ impl Room {
             mut_dep: mut_dep,
         }
     }
-    pub fn iter_walls(&mut self, )
+
+    pub fn wall_at(&self, coord: Coord2D) -> bool {
+        self.mut_ind.override_rocks.get(&coord)
+        .map(|x| *x)
+        .unwrap_or_else(|| {
+            self.con_dep.default_rocks.test(coord)
+        })
+    }
+
+    pub fn iter_walls(&self) -> impl Iterator<Item=Coord2D> {
+        CoordIter::new::<_>(
+            Self::WIDTH as usize,
+            Self::HEIGHT as usize,
+            |coord| {
+                self.wall_at(coord)
+            },
+        )
+    }
 
     pub fn update(&mut self, mut_ind: RoomMutInd) {
         unimplemented!()
     }
 }
 
-pub struct CoordIter {
+struct CoordIter<F: Fn(Coord2D)->bool> {
     w: usize,
     h: usize,
     next: Coord2D,
+    filter_func: F,
+}
+
+impl<F> CoordIter<F> where F: Fn(Coord2D) -> bool {
+    pub fn new(w: usize, h: usize, filter_func: F {
+        CoordIter {
+            h: h,
+            w: w,
+            next: Coord2D::new(0, 0),
+            filter_func, filter_func,
+        }
+    }
+}
+
+impl Iterator for CoordIter { 
+    type Item = Coord2D;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.next.x >= Room::WIDTH {
+                self.next.y += 1;
+                if self.next.y >= Room::HEIGHT {
+                    return None;
+                }
+                self.next.x = 0;
+            }
+            let was = self.next;
+            self.next = Coord2D::new(was.x+1, was.y);
+            if self.filter_func(was) {
+                return Some(was);
+            }
+        }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let x = self.w * self.h;
+        (x, Some(x))
+    }
 }
